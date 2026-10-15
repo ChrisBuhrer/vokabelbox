@@ -1,0 +1,13 @@
+
+{
+  "name": "VokabelBox – Englisch lernen",
+  "short_name": "VokabelBox",
+  "description": "Mein persönlicher Englisch-Karteikasten",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#172c4c",
+  "lang": "de"
+}
+  
