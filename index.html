@@ -1,0 +1,474 @@
+
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport"
+ content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#172c4c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="VokabelBox">
+<link rel="manifest" href="./manifest.json">
+<title>VokabelBox</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f1f5f9;color:#172c4c;
+ font:16px -apple-system,BlinkMacSystemFont,sans-serif}
+header{background:#172c4c;color:white;padding:25px 18px}
+header h1{margin:0;font-size:27px}
+header p{color:#c1d3ea;margin:5px 0}
+main{max-width:600px;margin:auto;padding:15px 14px 45px}
+nav{display:flex;background:white;position:sticky;top:0;
+ z-index:2;border-bottom:1px solid #ddd}
+nav button{flex:1;border:0;border-radius:0;background:white;
+ padding:16px 2px;color:#4b5563}
+nav button.on{border-bottom:3px solid #2455aa;
+ font-weight:bold;color:#2455aa}
+h2{font-size:20px}
+.panel{background:white;border-radius:16px;
+ padding:16px;margin-bottom:15px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{font:inherit;cursor:pointer;touch-action:manipulation}
+.stack{border:2px solid transparent;border-radius:15px;
+ padding:15px 12px;text-align:left}
+.stack.selected{border-color:#183d76}
+.stack strong{display:block;font-size:30px;margin-top:10px}
+.card{width:100%;min-height:235px;border:1px solid #d9e1ec;
+ background:white;border-radius:18px;padding:20px;
+ display:flex;flex-direction:column;align-items:center;
+ justify-content:center;gap:25px}
+.card .word{font-size:32px;font-weight:750;
+ overflow-wrap:anywhere;text-align:center}
+.small{font-size:13px;color:#64748b}
+.actions{display:flex;gap:6px;margin:12px 0}
+.actions button{flex:1;padding:14px 2px;color:white;
+ border:0;border-radius:11px;font-size:13px;font-weight:700}
+.btn{border:1px solid #cbd5e1;background:white;
+ color:#183d76;border-radius:11px;padding:13px;
+ margin:5px 0;font-weight:650}
+.primary{background:#2454a5;color:white;border-color:#2454a5}
+.full{width:100%}
+input,select,textarea{width:100%;padding:13px;border-radius:10px;
+ background:white;border:1px solid #cbd5e1;
+ font:16px -apple-system,sans-serif;margin:6px 0}
+textarea{min-height:120px}
+.row{display:flex;justify-content:space-between;
+ gap:10px;align-items:center}
+.entry{padding:11px 0;border-bottom:1px solid #e2e8f0}
+.hidden{display:none}
+.note{font-size:13px;color:#475569;line-height:1.5}
+</style>
+</head>
+<body>
+<header>
+ <h1>📚 VokabelBox</h1>
+ <p>Mein persönlicher Englisch-Karteikasten</p>
+ <div id="stats">Lade Vokabeln …</div>
+</header>
+<nav>
+ <button class="on" data-tab="lernen">Lernen</button>
+ <button data-tab="woerter">Wörter</button>
+ <button data-tab="backup">Daten & Backup</button>
+</nav>
+<main id="app"></main>
+<script>
+"use strict";
+
+const KEY="vokabelbox-v2";
+const STAPEL=["Neu","Falsch","Fast richtig","Richtig"];
+const FARBEN=["#e4ecff","#ffe1e1","#fff0ce","#def7e5"];
+const TEXTFARBEN=["#244eaf","#a92323","#895c00","#126c3a"];
+
+const START=[
+["apple","Apfel"],["house","Haus"],["window","Fenster"],
+["door","Tür"],["book","Buch"],["water","Wasser"],
+["food","Essen"],["friend","Freund/Freundin"],
+["family","Familie"],["school","Schule"],
+["work","Arbeit"],["morning","Morgen"],
+["evening","Abend"],["question","Frage"],
+["answer","Antwort"],["important","wichtig"],
+["beautiful","schön"],["difficult","schwierig"],
+["easy","einfach"],["always","immer"],
+["never","niemals"],["sometimes","manchmal"],
+["to learn","lernen"],["to understand","verstehen"],
+["to speak","sprechen"],["to write","schreiben"],
+["to read","lesen"],["to think","denken"],
+["to know","wissen/kennen"],["to find","finden"],
+["to help","helfen"],["to ask","fragen"],
+["today","heute"],["tomorrow","morgen"],
+["yesterday","gestern"],["week","Woche"],
+["month","Monat"],["year","Jahr"],
+["happy","glücklich"],["sad","traurig"],
+["tired","müde"],["hungry","hungrig"],
+["country","Land"],["city","Stadt"],
+["street","Straße"],["train","Zug"],
+["ticket","Fahrkarte"],["money","Geld"],
+["breakfast","Frühstück"],["language","Sprache"]
+];
+
+const makeId=()=>crypto.randomUUID
+ ? crypto.randomUUID()
+ : String(Date.now())+Math.random();
+
+const escapeHTML=s=>String(s).replace(
+ /[&<>"']/g,
+ x=>({"&":"&amp;","<":"&lt;",">":"&gt;",
+ '"':"&quot;","'":"&#39;"}[x])
+);
+
+let cards=[];
+let tab="lernen";
+let stapel=0;
+let richtung="zufall";
+let aktuelleRichtung="en";
+let sichtbar=false;
+let reihe=[];
+let suchtext="";
+
+function speichern(){
+ try {
+  localStorage.setItem(KEY,JSON.stringify(cards));
+  return true;
+ } catch {
+  alert("Speichern nicht möglich. Bitte Speicherplatz prüfen.");
+  return false;
+ }
+}
+
+function laden(){
+ try{
+  const alt=localStorage.getItem(KEY);
+  if(alt!==null){
+   const daten=JSON.parse(alt);
+   if(Array.isArray(daten)){
+    cards=daten;
+    return;
+   }
+  }
+ }catch(e){}
+ cards=START.map(([en,de])=>({
+  id:makeId(),en,de,stapel:0
+ }));
+ speichern();
+}
+
+function mischen(liste){
+ const a=[...liste];
+ for(let i=a.length-1;i>0;i--){
+  const j=Math.floor(Math.random()*(i+1));
+  [a[i],a[j]]=[a[j],a[i]];
+ }
+ return a;
+}
+
+function neueRichtung(){
+ sichtbar=false;
+ aktuelleRichtung=richtung==="zufall"
+  ?(Math.random()<.5?"en":"de"):richtung;
+}
+
+function rundeStarten(){
+ reihe=mischen(cards.filter(c=>c.stapel===stapel)
+  .map(c=>c.id));
+ neueRichtung();
+}
+
+function karte(){
+ return cards.find(c=>c.id===reihe[0]);
+}
+
+function statistik(){
+ const anz=STAPEL.map((_,i)=>
+  cards.filter(c=>c.stapel===i).length);
+ const prozent=cards.length
+  ?Math.round(anz[3]/cards.length*100):0;
+ document.getElementById("stats").textContent=
+  `${cards.length} Vokabeln · ${prozent} % richtig`;
+ return anz;
+}
+
+function ansicht(){
+ const app=document.getElementById("app");
+ document.querySelectorAll("[data-tab]").forEach(b=>
+  b.classList.toggle("on",b.dataset.tab===tab));
+ const anz=statistik();
+ if(tab==="lernen") lernen(app,anz);
+ if(tab==="woerter") woerter(app);
+ if(tab==="backup") backup(app);
+}
+
+function lernen(app,anz){
+ const c=karte();
+ app.innerHTML=`
+ <div class="grid">
+ ${STAPEL.map((s,i)=>`
+  <button class="stack ${stapel===i?"selected":""}"
+   data-stapel="${i}"
+   style="background:${FARBEN[i]};color:${TEXTFARBEN[i]}">
+   ${s}<strong>${anz[i]}</strong>
+  </button>`).join("")}
+ </div>
+ <div class="panel" style="margin-top:15px">
+  <label for="richtung"><b>Lernrichtung</b></label>
+  <select id="richtung">
+   <option value="zufall">Zufällig</option>
+   <option value="en">Englisch → Deutsch</option>
+   <option value="de">Deutsch → Englisch</option>
+  </select>
+  <div class="row small">
+   <span>Stapel: ${STAPEL[stapel]}</span>
+   <span>Noch ${reihe.length} Karten</span>
+  </div>
+ </div>
+ ${c?`
+ <button class="card" id="drehen">
+  <span class="small">${sichtbar?"ÜBERSETZUNG":
+   aktuelleRichtung==="en"?"ENGLISCH":"DEUTSCH"}</span>
+  <span class="word">${escapeHTML(
+   sichtbar
+    ? aktuelleRichtung==="en"?c.de:c.en
+    : aktuelleRichtung==="en"?c.en:c.de
+  )}</span>
+  <span class="small">↻ Karte antippen</span>
+ </button>
+ ${sichtbar?`
+  <div class="actions">
+   <button data-wertung="1" style="background:#c63333">
+    ✕ Falsch</button>
+   <button data-wertung="2" style="background:#ca8a04">
+    ~ Fast richtig</button>
+   <button data-wertung="3" style="background:#168448">
+    ✓ Richtig</button>
+  </div>`:
+  `<button class="btn primary full" id="loesung">
+    Übersetzung anzeigen</button>`}
+ <div class="row">
+  <button class="btn" id="sprechen">🔊 Anhören</button>
+  <button class="btn" id="ueberspringen">Überspringen</button>
+ </div>`:
+ `<div class="panel" style="text-align:center">
+  <h2>🎉 Runde abgeschlossen</h2>
+  <p>Keine weiteren Karten in dieser Runde.</p>
+  <button class="btn primary full" id="neustart">
+   Erneut mischen</button>
+ </div>`}
+ <p class="note">Jede Karte erscheint höchstens einmal pro Runde.
+ Beim nächsten Durchgang wird der Stapel neu gemischt.</p>`;
+
+ app.querySelectorAll("[data-stapel]").forEach(b=>{
+  b.onclick=()=>{
+   stapel=Number(b.dataset.stapel);
+   rundeStarten();ansicht();
+  };
+ });
+
+ const select=app.querySelector("#richtung");
+ select.value=richtung;
+ select.onchange=()=>{
+  richtung=select.value;neueRichtung();ansicht();
+ };
+
+ if(!c){
+  app.querySelector("#neustart").onclick=()=>{
+   rundeStarten();ansicht();
+  };
+  return;
+ }
+
+ app.querySelector("#drehen").onclick=()=>{
+  sichtbar=!sichtbar;ansicht();
+ };
+
+ const loesung=app.querySelector("#loesung");
+ if(loesung)loesung.onclick=()=>{
+  sichtbar=true;ansicht();
+ };
+
+ app.querySelectorAll("[data-wertung]").forEach(b=>{
+  b.onclick=()=>{
+   c.stapel=Number(b.dataset.wertung);
+   reihe.shift();
+   speichern();
+   neueRichtung();
+   ansicht();
+  };
+ });
+
+ app.querySelector("#ueberspringen").onclick=()=>{
+  if(reihe.length>1)reihe.push(reihe.shift());
+  neueRichtung();ansicht();
+ };
+
+ app.querySelector("#sprechen").onclick=()=>{
+  if("speechSynthesis" in window){
+   speechSynthesis.cancel();
+   const utter=new SpeechSynthesisUtterance(c.en);
+   utter.lang="en-GB";
+   utter.rate=0.85;
+   speechSynthesis.speak(utter);
+  }
+ };
+}
+
+function woerter(app){
+ const gefunden=cards.filter(c=>
+  (c.en+" "+c.de).toLocaleLowerCase()
+   .includes(suchtext.toLocaleLowerCase()));
+ app.innerHTML=`
+ <div class="panel">
+  <h2>Eigene Vokabel hinzufügen</h2>
+  <form id="neu">
+   <input name="englisch" placeholder="Englisch" required
+    maxlength="150">
+   <input name="deutsch" placeholder="Deutsch" required
+    maxlength="150">
+   <button class="btn primary full" type="submit">
+    + Vokabel speichern</button>
+  </form>
+ </div>
+ <div class="panel">
+  <h2>Meine Vokabeln</h2>
+  <input id="suche" placeholder="Vokabel suchen"
+   value="${escapeHTML(suchtext)}">
+  <p class="small">${gefunden.length} Treffer –
+   maximal 100 werden angezeigt</p>
+  ${gefunden.slice(0,100).map(c=>`
+   <div class="entry row">
+    <div><b>${escapeHTML(c.en)}</b><br>
+     ${escapeHTML(c.de)}<br>
+     <span class="small">${STAPEL[c.stapel]}</span>
+    </div>
+    <button class="btn" data-delete="${escapeHTML(c.id)}">
+     Löschen</button>
+   </div>`).join("")}
+ </div>`;
+
+ app.querySelector("#neu").onsubmit=e=>{
+  e.preventDefault();
+  const f=new FormData(e.target);
+  const en=String(f.get("englisch")).trim();
+  const de=String(f.get("deutsch")).trim();
+  if(!en||!de)return;
+  cards.push({id:makeId(),en,de,stapel:0});
+  speichern();rundeStarten();ansicht();
+ };
+
+ app.querySelector("#suche").oninput=e=>{
+  suchtext=e.target.value;
+  const pos=e.target.selectionStart;
+  ansicht();
+  const feld=app.querySelector("#suche");
+  feld.focus();feld.setSelectionRange(pos,pos);
+ };
+
+ app.querySelectorAll("[data-delete]").forEach(b=>{
+  b.onclick=()=>{
+   if(!confirm("Diese Vokabel löschen?"))return;
+   cards=cards.filter(c=>c.id!==b.dataset.delete);
+   speichern();rundeStarten();ansicht();
+  };
+ });
+}
+
+function backup(app){
+ app.innerHTML=`
+ <div class="panel">
+  <h2>Datensicherung</h2>
+  <p class="note">Sichere alle Vokabeln und Stapelstände
+   in einer Datei.</p>
+  <button id="export" class="btn primary full">
+   Backup herunterladen</button>
+  <label for="restore">Backup wiederherstellen</label>
+  <input id="restore" type="file" accept=".json">
+ </div>
+ <div class="panel">
+  <h2>Vokabeln importieren</h2>
+  <p class="note">Eine Zeile pro Wort. Englisch und Deutsch
+   durch Semikolon oder Tabulator trennen.</p>
+  <textarea id="importtext"
+   placeholder="tree;Baum&#10;chair;Stuhl"></textarea>
+  <button id="import" class="btn full">
+   Vokabeln importieren</button>
+  <p id="meldung" class="note"></p>
+ </div>
+ <p class="note">Deine Daten liegen lokal auf diesem Gerät.
+ Lösche die Website-Daten nicht. Exportiere regelmäßig
+ ein Backup.</p>`;
+
+ app.querySelector("#export").onclick=()=>{
+  const blob=new Blob([
+   JSON.stringify({version:2,cards},null,2)
+  ],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  a.download="vokabelbox-backup.json";
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+ };
+
+ app.querySelector("#restore").onchange=async e=>{
+  const file=e.target.files[0];
+  if(!file)return;
+  try{
+   const obj=JSON.parse(await file.text());
+   if(!Array.isArray(obj.cards))throw Error();
+   if(!obj.cards.every(c=>
+    typeof c.en==="string"&&
+    typeof c.de==="string"&&
+    Number.isInteger(c.stapel)&&
+    c.stapel>=0&&c.stapel<=3
+   ))throw Error();
+   if(!confirm("Aktuelle Daten durch Backup ersetzen?"))
+    return;
+   cards=obj.cards.map(c=>({
+    id:makeId(),en:c.en,de:c.de,stapel:c.stapel
+   }));
+   speichern();rundeStarten();ansicht();
+  }catch{
+   alert("Ungültige Backup-Datei.");
+  }
+ };
+
+ app.querySelector("#import").onclick=()=>{
+  const text=app.querySelector("#importtext").value;
+  let anzahl=0;
+  const bekannt=new Set(cards.map(c=>
+   c.en.toLowerCase()+"|"+c.de.toLowerCase()));
+  for(const zeile of text.split(/\r?\n/)){
+   const sep=zeile.includes("\t")?"\t":";";
+   const i=zeile.indexOf(sep);
+   if(i<1)continue;
+   const en=zeile.slice(0,i).trim();
+   const de=zeile.slice(i+1).trim();
+   const key=en.toLowerCase()+"|"+de.toLowerCase();
+   if(!en||!de||bekannt.has(key))continue;
+   cards.push({id:makeId(),en,de,stapel:0});
+   bekannt.add(key);anzahl++;
+  }
+  speichern();rundeStarten();ansicht();
+  app.querySelector("#meldung").textContent=
+   anzahl+" Vokabeln importiert.";
+ };
+}
+
+document.querySelectorAll("[data-tab]").forEach(b=>{
+ b.onclick=()=>{
+  tab=b.dataset.tab;
+  ansicht();
+ };
+});
+
+laden();
+rundeStarten();
+ansicht();
+
+if("serviceWorker" in navigator){
+ window.addEventListener("load",()=>{
+  navigator.serviceWorker.register("./sw.js")
+   .catch(console.error);
+ });
+}
+</script>
+</body>
+</html>
